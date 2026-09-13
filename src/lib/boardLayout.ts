@@ -80,11 +80,18 @@ function placeArm(
 		let nextHeading = heading;
 
 		if (pendingDrop === 0) {
-			if (heading === 'E' && cx + tileBox(isDouble, 'E').w > rightBound) {
-				nextHeading = 'S';
-				pendingDrop = DROP_COUNT;
-			} else if (heading === 'W' && cx - tileBox(isDouble, 'W').w < leftBound) {
-				nextHeading = 'N';
+			const hitRight =
+				heading === 'E' && cx + tileBox(isDouble, 'E').w > rightBound;
+			const hitLeft =
+				heading === 'W' && cx - tileBox(isDouble, 'W').w < leftBound;
+
+			if (hitRight || hitLeft) {
+				/*
+				 * Derecha del origen: dobla hacia arriba.
+				 * Izquierda del origen: dobla hacia abajo.
+				 * Así las filas no se montan.
+				 */
+				nextHeading = arm === 'right' ? 'N' : 'S';
 				pendingDrop = DROP_COUNT;
 			}
 		}
@@ -107,7 +114,11 @@ function placeArm(
 			lastEW = 'W';
 		} else if (nextHeading === 'S') {
 			const starting = pendingDrop === DROP_COUNT;
-			x = starting ? last.x + last.w - w : dropX;
+			x = starting
+				? lastEW === 'W'
+					? last.x
+					: last.x + last.w - w
+				: dropX;
 			y = starting ? last.y + last.h : dropY;
 			dropX = x;
 			dropY = y + h;
@@ -123,7 +134,11 @@ function placeArm(
 			}
 		} else {
 			const starting = pendingDrop === DROP_COUNT;
-			x = starting ? last.x : dropX;
+			x = starting
+				? lastEW === 'E'
+					? last.x + last.w - w
+					: last.x
+				: dropX;
 			y = starting ? last.y - h : dropY - h;
 			dropX = x;
 			dropY = y;

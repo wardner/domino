@@ -16,6 +16,7 @@ import {
 	getDisplayScore,
 	getLeftEnd,
 	getRightEnd,
+	BonusType,
 	hasPlayableTile,
 	isPlayable,
 	mustOpenWithDoubleSix,
@@ -65,6 +66,11 @@ export default function GameTable({
 		dx: number;
 		dy: number;
 	} | null>(null);
+	const [bonusBurst, setBonusBurst] = useState<{
+		playerIndex: number;
+		type: BonusType;
+		key: number;
+	} | null>(null);
 	const mesaRef = useRef<HTMLDivElement>(null);
 	const handRowRef = useRef<HTMLDivElement>(null);
 	const onPlayRef = useRef(onPlay);
@@ -76,6 +82,7 @@ export default function GameTable({
 		active: boolean;
 	} | null>(null);
 	const prevTileIdsRef = useRef(new Set(game.board.map((item) => item.tile.id)));
+	const prevBonusCountRef = useRef(game.roundBonuses.length);
 
 	onPlayRef.current = onPlay;
 	onPassRef.current = onPass;
@@ -195,12 +202,42 @@ export default function GameTable({
 		const capicua = Boolean(game.roundResult?.bonuses.includes('capicua'));
 		const timer = window.setTimeout(() => {
 			setHoldTable(false);
-		}, capicua ? 1600 : 1500);
+		}, capicua ? 2000 : 1500);
 
 		return () => {
 			window.clearTimeout(timer);
 		};
 	}, [game.round, game.roundComplete, game.roundResult]);
+
+	useEffect(() => {
+		if (game.roundBonuses.length <= prevBonusCountRef.current) {
+			prevBonusCountRef.current = game.roundBonuses.length;
+			return;
+		}
+
+		prevBonusCountRef.current = game.roundBonuses.length;
+
+		const type = game.roundBonuses[game.roundBonuses.length - 1];
+		const playerIndex = game.lastPlayerToPlay;
+
+		if (!type || playerIndex === null) {
+			return;
+		}
+
+		setBonusBurst({
+			playerIndex,
+			type,
+			key: Date.now(),
+		});
+
+		const timer = window.setTimeout(() => {
+			setBonusBurst(null);
+		}, 1350);
+
+		return () => {
+			window.clearTimeout(timer);
+		};
+	}, [game.lastPlayerToPlay, game.roundBonuses]);
 
 	function getPlayableSides(tile: Tile) {
 		if (game.board.length === 0) {
@@ -383,6 +420,7 @@ export default function GameTable({
 					<p className='text-sm text-emerald-100/80'>
 						{teamNames[result.winnerTeam]}
 					</p>
+					<PointsBreakdown result={result} />
 					<div className='mt-2 grid grid-cols-2 gap-1.5 text-sm'>
 						<div className='rounded-lg bg-black/30 py-1.5'>
 							{result.finalScores[0]}
@@ -437,20 +475,7 @@ export default function GameTable({
 							</span>
 						</p>
 					)}
-					<p className='text-sm font-semibold text-yellow-200'>
-						+{result.totalPoints}
-						{result.bonusPoints > 0
-							? ` · ${result.bonuses
-									.map((bonus) =>
-										bonus === 'salida'
-											? 'salida'
-											: bonus === 'pase-corrido'
-												? 'pase corrido'
-												: 'capicúa',
-									)
-									.join(', ')}`
-							: ''}
-					</p>
+					<PointsBreakdown result={result} />
 					<div className='mt-2 space-y-1'>
 						{result.scoringPlayers.map((player) => {
 							const role =
@@ -573,10 +598,19 @@ export default function GameTable({
 
 				<section className='table-rail mt-1.5 flex min-h-0 flex-1 flex-col overflow-hidden'>
 					<div
-						className={`felt-inner flex min-h-0 flex-1 flex-col overflow-hidden ${
+						className={`felt-inner relative flex min-h-0 flex-1 flex-col overflow-hidden ${
 							capicuaHold ? 'mesa-tremble' : ''
 						}`}
 					>
+						{bonusBurst ? (
+							<BonusBurst
+								key={bonusBurst.key}
+								playerIndex={bonusBurst.playerIndex}
+								mySeat={mySeat}
+								type={bonusBurst.type}
+								playerName={game.players[bonusBurst.playerIndex].name}
+							/>
+						) : null}
 						<div className='flex shrink-0 flex-col items-center justify-center gap-0.5 px-2 pt-1.5'>
 							<span
 								className={`text-[9px] ${
@@ -782,6 +816,90 @@ export default function GameTable({
 				</section>
 			</div>
 		</main>
+	);
+}
+
+function bonusLabel(bonus: BonusType) {
+	if (bonus === 'salida') {
+		return 'salida';
+	}
+
+	if (bonus === 'pase-corrido') {
+		return 'pase corrido';
+	}
+
+	return 'capicúa';
+}
+
+function PointsBreakdown({
+	result,
+}: {
+	result: {
+		normalPoints: number;
+		bonuses: BonusType[];
+		totalPoints: number;
+	};
+}) {
+	return (
+		<div className='mt-2 space-y-0.5 text-left text-[12px]'>
+			<div className='flex items-center justify-between gap-3 text-emerald-50/85'>
+				<span>Fichas</span>
+				<span>+{result.normalPoints}</span>
+			</div>
+			{result.bonuses.map((bonus, index) => (
+				<div
+					key={`${bonus}-${index}`}
+					className='flex items-center justify-between gap-3 text-yellow-100/90'
+				>
+					<span>{bonusLabel(bonus)}</span>
+					<span>+30</span>
+				</div>
+			))}
+			<div className='flex items-center justify-between gap-3 font-semibold text-yellow-200'>
+				<span>Total</span>
+				<span>+{result.totalPoints}</span>
+			</div>
+		</div>
+	);
+}
+
+function BonusBurst({
+	playerIndex,
+	mySeat,
+	type,
+	playerName,
+}: {
+	playerIndex: number;
+	mySeat: number;
+	type: BonusType;
+	playerName: string;
+}) {
+	const relative = (((playerIndex - mySeat) % 4) + 4) % 4;
+	const spot =
+		relative === 0
+			? 'bottom-14 left-1/2 -translate-x-1/2'
+			: relative === 1
+				? 'right-3 top-1/2 -translate-y-1/2'
+				: relative === 2
+					? 'top-12 left-1/2 -translate-x-1/2'
+					: 'left-3 top-1/2 -translate-y-1/2';
+	const label =
+		type === 'salida'
+			? 'salida'
+			: type === 'pase-corrido'
+				? 'pase corrido'
+				: 'capicúa';
+
+	return (
+		<div className={`bonus-burst pointer-events-none absolute z-20 ${spot}`}>
+			<p className='text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-yellow-100/80'>
+				{playerName}
+			</p>
+			<p className='text-center text-5xl font-black leading-none text-yellow-300 drop-shadow-md'>
+				+30
+			</p>
+			<p className='text-center text-[11px] text-yellow-50/90'>{label}</p>
+		</div>
 	);
 }
 

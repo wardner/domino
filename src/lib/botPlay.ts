@@ -6,7 +6,7 @@ import {
 	mustOpenWithDoubleSix,
 } from '@/lib/dominoes';
 
-export const BOT_THINK_MS = 2000;
+export const BOT_THINK_MS = 1000;
 
 export type BotMove =
 	| { type: 'pass' }
