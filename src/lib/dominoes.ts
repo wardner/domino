@@ -328,6 +328,59 @@ export function createMatchWonDemoGame(playerNames: string[]): GameState {
 	return playTile(createCapicuaDemoGame(playerNames), '2-5', 'right');
 }
 
+/*
+ * Mano lista para trancar:
+ * mesa 3 | … | 4 y ficha 4-0.
+ * Al tirarla nadie tiene 3 ni 0.
+ */
+export function createTrancaDemoGame(playerNames: string[]): GameState {
+	return {
+		players: [
+			{
+				id: 'player-0',
+				name: playerNames[0],
+				hand: [tile(4, 0), tile(2, 2), tile(5, 5)],
+			},
+			{
+				id: 'player-1',
+				name: playerNames[1],
+				hand: [tile(2, 5), tile(5, 6), tile(2, 6)],
+			},
+			{
+				id: 'player-2',
+				name: playerNames[2],
+				hand: [tile(6, 6), tile(4, 6)],
+			},
+			{
+				id: 'player-3',
+				name: playerNames[3],
+				hand: [tile(2, 4), tile(4, 5)],
+			},
+		],
+		board: [
+			{ tile: tile(3, 1, 3, 1), flipped: false },
+			{ tile: tile(1, 1), flipped: false },
+			{ tile: tile(1, 4, 1, 4), flipped: false },
+		],
+		currentPlayer: 0,
+		round: 1,
+		roundStarter: 0,
+		roundComplete: false,
+		matchComplete: false,
+		winnerTeam: null,
+		winnerPlayer: null,
+		normalScores: [40, 30],
+		bonusScores: [0, 0],
+		passStreak: 0,
+		lastPlayerToPlay: 2,
+		firstMoveMade: true,
+		openingTileId: '1-1',
+		openingPassPending: false,
+		roundBonuses: [],
+		roundResult: null,
+	};
+}
+
 export function startNextRound(state: GameState): GameState {
 	if (!state.roundComplete) {
 		throw new Error('La mano todavía no ha terminado');

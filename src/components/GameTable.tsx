@@ -19,6 +19,7 @@ import {
 	hasPlayableTile,
 	isPlayable,
 	mustOpenWithDoubleSix,
+	rightPlayer,
 	Team,
 	Tile,
 } from '@/lib/dominoes';
@@ -174,21 +175,32 @@ export default function GameTable({
 		setArrivingId(added.tile.id);
 
 		const capicua = Boolean(game.roundResult?.bonuses.includes('capicua'));
-		const wait = game.roundComplete ? (capicua ? 720 : 360) : 360;
-
-		if (game.roundComplete) {
-			setHoldTable(true);
-		}
-
 		const timer = window.setTimeout(() => {
 			setArrivingId(null);
-			setHoldTable(false);
-		}, wait);
+		}, capicua ? 1100 : 360);
 
 		return () => {
 			window.clearTimeout(timer);
 		};
-	}, [game.board, game.roundComplete, game.roundResult]);
+	}, [game.board, game.roundResult]);
+
+	useEffect(() => {
+		if (!game.roundComplete) {
+			setHoldTable(false);
+			return;
+		}
+
+		setHoldTable(true);
+
+		const capicua = Boolean(game.roundResult?.bonuses.includes('capicua'));
+		const timer = window.setTimeout(() => {
+			setHoldTable(false);
+		}, capicua ? 1600 : 1500);
+
+		return () => {
+			window.clearTimeout(timer);
+		};
+	}, [game.round, game.roundComplete, game.roundResult]);
 
 	function getPlayableSides(tile: Tile) {
 		if (game.board.length === 0) {
@@ -362,8 +374,8 @@ export default function GameTable({
 		const result = game.roundResult;
 
 		return (
-			<main className='felt-page flex min-h-dvh items-center justify-center p-3 text-[#f4e6c3]'>
-				<div className='w-full max-w-xs rounded-2xl bg-black/35 p-3 text-center'>
+			<main className='result-page felt-page flex min-h-dvh items-center justify-center p-3 text-[#f4e6c3]'>
+				<div className='result-card w-full max-w-xs rounded-2xl bg-black/35 p-3 text-center'>
 					<p className='text-[10px] uppercase tracking-[0.18em] text-yellow-300'>
 						Partida
 					</p>
@@ -403,14 +415,28 @@ export default function GameTable({
 	if (game.roundComplete && game.roundResult && !holdTable) {
 		const result = game.roundResult;
 		const winner = game.players[result.winnerPlayer];
+		const trancador = result.trancador;
+		const contra =
+			trancador === null ? null : rightPlayer(trancador);
 
 		return (
-			<main className='felt-page flex min-h-dvh items-center justify-center p-3 text-[#f4e6c3]'>
-				<div className='w-full max-w-xs rounded-2xl bg-black/35 p-3 text-center'>
+			<main className='result-page felt-page flex min-h-dvh items-center justify-center p-3 text-[#f4e6c3]'>
+				<div className='result-card w-full max-w-xs rounded-2xl bg-black/35 p-3 text-center'>
 					<p className='text-[10px] uppercase tracking-[0.18em] text-yellow-300'>
 						{result.tranca ? 'Tranca' : 'Mano'}
 					</p>
 					<h1 className='mt-0.5 text-lg font-semibold'>{winner.name}</h1>
+					{result.tranca && trancador !== null && contra !== null && (
+						<p className='mt-0.5 text-[10px] text-emerald-100/75'>
+							<span className='text-amber-200'>
+								{game.players[trancador].name}
+							</span>
+							{' trancó · vs '}
+							<span className='text-sky-200'>
+								{game.players[contra].name}
+							</span>
+						</p>
+					)}
 					<p className='text-sm font-semibold text-yellow-200'>
 						+{result.totalPoints}
 						{result.bonusPoints > 0
@@ -426,29 +452,64 @@ export default function GameTable({
 							: ''}
 					</p>
 					<div className='mt-2 space-y-1'>
-						{result.scoringPlayers.map((player) => (
-							<div
-								key={player.playerIndex}
-								className='flex items-center justify-between gap-2 rounded-lg bg-black/25 px-2 py-1'
-							>
-								<span className='text-[11px]'>{player.playerName}</span>
-								<div className='flex items-center gap-px'>
-									{player.tiles.map((tile) => (
-										<Domino
-											key={tile.id}
-											tile={tile}
-											size='mini'
-											orientation='hand'
-											disabled
-											playable
-										/>
-									))}
+						{result.scoringPlayers.map((player) => {
+							const role =
+								result.tranca && trancador !== null
+									? player.playerIndex === trancador
+										? 'trancador'
+										: player.playerIndex === contra
+											? 'contra'
+											: null
+									: null;
+
+							return (
+								<div
+									key={player.playerIndex}
+									className={`flex items-center justify-between gap-2 rounded-lg px-2 py-1 ${
+										role === 'trancador'
+											? 'tranca-trancador'
+											: role === 'contra'
+												? 'tranca-contra'
+												: 'bg-black/25'
+									}`}
+								>
+									<span className='min-w-0 text-left text-[11px]'>
+										{player.playerName}
+										{role === 'trancador' ? (
+											<span className='ml-1 text-[9px] uppercase tracking-wide text-amber-200'>
+												trancó
+											</span>
+										) : null}
+										{role === 'contra' ? (
+											<span className='ml-1 text-[9px] uppercase tracking-wide text-sky-200'>
+												contra
+											</span>
+										) : null}
+									</span>
+									<div className='flex items-center gap-px'>
+										{player.tiles.map((tile) => (
+											<Domino
+												key={tile.id}
+												tile={tile}
+												size='mini'
+												orientation='hand'
+												disabled
+												playable
+											/>
+										))}
+									</div>
+									<span
+										className={`text-[11px] ${
+											role === 'contra'
+												? 'text-sky-100'
+												: 'text-yellow-200'
+										}`}
+									>
+										+{player.points}
+									</span>
 								</div>
-								<span className='text-[11px] text-yellow-200'>
-									+{player.points}
-								</span>
-							</div>
-						))}
+							);
+						})}
 					</div>
 					<div className='mt-2 grid grid-cols-2 gap-1.5 text-sm'>
 						<div className='rounded-lg bg-black/30 py-1'>
@@ -470,6 +531,13 @@ export default function GameTable({
 		);
 	}
 
+	const leftPlacedEnd = boardPath.tiles.find(
+		(item) => item.tile.id === game.board[0]?.tile.id,
+	);
+	const rightPlacedEnd = boardPath.tiles.find(
+		(item) =>
+			item.tile.id === game.board[game.board.length - 1]?.tile.id,
+	);
 	const leftEnd = game.board.length > 0 ? getLeftEnd(game.board) : null;
 	const rightEnd = game.board.length > 0 ? getRightEnd(game.board) : null;
 	const topSeat = (mySeat + 2) % 4;
@@ -560,7 +628,18 @@ export default function GameTable({
 										height={boardPath.height}
 										anchorY={boardPath.anchorY}
 									>
-										{boardPath.tiles.map((placed) => (
+										{boardPath.tiles.map((placed) => {
+											const capicuaStyle =
+												capicuaHold && arrivingId === placed.tile.id
+													? {
+															['--capi-x']: `${(leftPlacedEnd?.x ?? placed.x) - placed.x}px`,
+															['--capi-y']: `${(leftPlacedEnd?.y ?? placed.y) - placed.y}px`,
+															['--cua-x']: `${(rightPlacedEnd?.x ?? placed.x) - placed.x}px`,
+															['--cua-y']: `${(rightPlacedEnd?.y ?? placed.y) - placed.y}px`,
+														}
+													: null;
+
+											return (
 											<div
 												key={placed.key}
 												className={`absolute ${
@@ -570,7 +649,11 @@ export default function GameTable({
 															}`
 														: ''
 												}`}
-												style={{ left: placed.x, top: placed.y }}
+												style={{
+													left: placed.x,
+													top: placed.y,
+													...capicuaStyle,
+												}}
 											>
 												<Domino
 													tile={placed.tile}
@@ -582,7 +665,8 @@ export default function GameTable({
 													playable
 												/>
 											</div>
-										))}
+											);
+										})}
 									</FitBoard>
 								)}
 							</div>

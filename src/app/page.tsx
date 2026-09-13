@@ -9,6 +9,7 @@ import {
 	createCapicuaDemoGame,
 	createGame,
 	createMatchWonDemoGame,
+	createTrancaDemoGame,
 	GameState,
 	passTurn,
 	playTile,
@@ -46,6 +47,11 @@ export default function Home() {
 
 		if (params.has('capicua')) {
 			setLocalGame(createCapicuaDemoGame(BOT_NAMES));
+			return;
+		}
+
+		if (params.has('tranca')) {
+			setLocalGame(createTrancaDemoGame(BOT_NAMES));
 		}
 	}, []);
 
