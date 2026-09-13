@@ -36,6 +36,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# salas locales en memoria de disco
+.domino-rooms.json
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
