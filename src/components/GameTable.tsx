@@ -1,6 +1,12 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import {
+	useEffect,
+	useLayoutEffect,
+	useRef,
+	useState,
+	type PointerEvent,
+} from 'react';
 
 import Domino from '@/components/Domino';
 import { BOT_THINK_MS, chooseBotMove } from '@/lib/botPlay';
@@ -12,6 +18,7 @@ import {
 	getRightEnd,
 	hasPlayableTile,
 	isPlayable,
+	mustOpenWithDoubleSix,
 	Team,
 	Tile,
 } from '@/lib/dominoes';
@@ -49,11 +56,25 @@ export default function GameTable({
 	const [selectedTile, setSelectedTile] = useState<Tile | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [passSeconds, setPassSeconds] = useState(5);
-	const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 	const [mesaWidth, setMesaWidth] = useState(280);
+	const [arrivingId, setArrivingId] = useState<string | null>(null);
+	const [holdTable, setHoldTable] = useState(false);
+	const [lift, setLift] = useState<{
+		index: number;
+		dx: number;
+		dy: number;
+	} | null>(null);
 	const mesaRef = useRef<HTMLDivElement>(null);
+	const handRowRef = useRef<HTMLDivElement>(null);
 	const onPlayRef = useRef(onPlay);
 	const onPassRef = useRef(onPass);
+	const dragRef = useRef<{
+		index: number;
+		x: number;
+		y: number;
+		active: boolean;
+	} | null>(null);
+	const prevTileIdsRef = useRef(new Set(game.board.map((item) => item.tile.id)));
 
 	onPlayRef.current = onPlay;
 	onPassRef.current = onPass;
@@ -62,7 +83,12 @@ export default function GameTable({
 	const myTurn = game.currentPlayer === mySeat;
 	const myTeam = (mySeat % 2) as Team;
 	const otherTeam = (1 - myTeam) as Team;
-	const canHumanPlay = hasPlayableTile(myPlayer, game.board);
+	const openingDoubleSix = mustOpenWithDoubleSix(game);
+	const canHumanPlay = hasPlayableTile(
+		myPlayer,
+		game.board,
+		openingDoubleSix,
+	);
 	const teamNames = teamNamesFromGame(game);
 	const boardPath = layoutBoardPath(
 		game.board,
@@ -136,6 +162,34 @@ export default function GameTable({
 		};
 	}, [game]);
 
+	useEffect(() => {
+		const prevIds = prevTileIdsRef.current;
+		const added = game.board.find((item) => !prevIds.has(item.tile.id));
+		prevTileIdsRef.current = new Set(game.board.map((item) => item.tile.id));
+
+		if (!added) {
+			return;
+		}
+
+		setArrivingId(added.tile.id);
+
+		const capicua = Boolean(game.roundResult?.bonuses.includes('capicua'));
+		const wait = game.roundComplete ? (capicua ? 720 : 360) : 360;
+
+		if (game.roundComplete) {
+			setHoldTable(true);
+		}
+
+		const timer = window.setTimeout(() => {
+			setArrivingId(null);
+			setHoldTable(false);
+		}, wait);
+
+		return () => {
+			window.clearTimeout(timer);
+		};
+	}, [game.board, game.roundComplete, game.roundResult]);
+
 	function getPlayableSides(tile: Tile) {
 		if (game.board.length === 0) {
 			return { left: false, right: false };
@@ -164,8 +218,12 @@ export default function GameTable({
 			return;
 		}
 
-		if (!isPlayable(tile, game.board)) {
-			setError('Ese domino no se puede jugar');
+		if (!isPlayable(tile, game.board, openingDoubleSix)) {
+			setError(
+				openingDoubleSix
+					? 'La partida sale con doble 6'
+					: 'Ese domino no se puede jugar',
+			);
 			return;
 		}
 
@@ -200,25 +258,107 @@ export default function GameTable({
 		setSelectedTile(selectedTile?.id === tile.id ? null : tile);
 	}
 
-	function handleDragStart(index: number) {
-		if (!myTurn) {
+	function onHandPointerDown(
+		event: PointerEvent<HTMLDivElement>,
+		index: number,
+	) {
+		event.preventDefault();
+		event.currentTarget.setPointerCapture(event.pointerId);
+		dragRef.current = {
+			index,
+			x: event.clientX,
+			y: event.clientY,
+			active: false,
+		};
+	}
+
+	function onHandPointerMove(event: PointerEvent<HTMLDivElement>) {
+		const drag = dragRef.current;
+
+		if (!drag) {
 			return;
 		}
 
-		setDraggedIndex(index);
+		const dx = event.clientX - drag.x;
+		const dy = event.clientY - drag.y;
+
+		if (!drag.active && Math.hypot(dx, dy) > 7) {
+			drag.active = true;
+		}
+
+		if (drag.active) {
+			setLift({
+				index: drag.index,
+				dx,
+				dy,
+			});
+		}
 	}
 
-	function handleDrop(targetIndex: number) {
-		if (draggedIndex === null || draggedIndex === targetIndex) {
-			setDraggedIndex(null);
+	function onHandPointerUp(event: PointerEvent<HTMLDivElement>, tile: Tile) {
+		const drag = dragRef.current;
+		dragRef.current = null;
+		setLift(null);
+
+		if (!drag) {
 			return;
 		}
 
-		onReorder(draggedIndex, targetIndex);
-		setDraggedIndex(null);
+		if (drag.active) {
+			const row = handRowRef.current;
+
+			if (!row) {
+				return;
+			}
+
+			const rect = row.getBoundingClientRect();
+			const ratio = (event.clientX - rect.left) / Math.max(rect.width, 1);
+			const to = Math.max(
+				0,
+				Math.min(
+					myPlayer.hand.length - 1,
+					Math.floor(ratio * myPlayer.hand.length),
+				),
+			);
+
+			if (to !== drag.index) {
+				onReorder(drag.index, to);
+			}
+
+			return;
+		}
+
+		selectTile(tile);
 	}
 
-	if (game.matchComplete && game.roundResult) {
+	const capicuaHold = Boolean(
+		holdTable && game.roundResult?.bonuses.includes('capicua'),
+	);
+	const arriveFrom = (() => {
+		const seat = game.lastPlayerToPlay;
+
+		if (seat === null) {
+			return 's';
+		}
+
+		const relative = (((seat - mySeat) % 4) + 4) % 4;
+
+		if (relative === 1) {
+			return 'e';
+		}
+
+		if (relative === 2) {
+			return 'n';
+		}
+
+		if (relative === 3) {
+			return 'w';
+		}
+
+		return 's';
+	})();
+
+	if (game.matchComplete && game.roundResult && !holdTable) {
 		const result = game.roundResult;
 
 		return (
@@ -260,7 +400,7 @@ export default function GameTable({
 		);
 	}
 
-	if (game.roundComplete && game.roundResult) {
+	if (game.roundComplete && game.roundResult && !holdTable) {
 		const result = game.roundResult;
 		const winner = game.players[result.winnerPlayer];
 
@@ -364,7 +504,11 @@ export default function GameTable({
 				</header>
 
 				<section className='table-rail mt-1.5 flex min-h-0 flex-1 flex-col overflow-hidden'>
-					<div className='felt-inner flex min-h-0 flex-1 flex-col overflow-hidden'>
+					<div
+						className={`felt-inner flex min-h-0 flex-1 flex-col overflow-hidden ${
+							capicuaHold ? 'mesa-tremble' : ''
+						}`}
+					>
 						<div className='flex shrink-0 flex-col items-center justify-center gap-0.5 px-2 pt-1.5'>
 							<span
 								className={`text-[9px] ${
@@ -406,7 +550,9 @@ export default function GameTable({
 							>
 								{game.board.length === 0 ? (
 									<div className='flex h-full items-center justify-center px-3 text-center text-[11px] text-emerald-50/70'>
-										Toca una ficha
+										{openingDoubleSix
+											? 'Sale el doble 6'
+											: 'Toca una ficha'}
 									</div>
 								) : (
 									<FitBoard
@@ -417,7 +563,13 @@ export default function GameTable({
 										{boardPath.tiles.map((placed) => (
 											<div
 												key={placed.key}
-												className='absolute'
+												className={`absolute ${
+													arrivingId === placed.tile.id
+														? `tile-arrive tile-arrive-${arriveFrom}${
+																capicuaHold ? ' tile-capicua' : ''
+															}`
+														: ''
+												}`}
 												style={{ left: placed.x, top: placed.y }}
 											>
 												<Domino
@@ -456,7 +608,9 @@ export default function GameTable({
 							{myTurn && (
 								<p className='text-[10px]'>
 									{canHumanPlay
-										? 'Tu turno'
+										? openingDoubleSix
+											? 'Tu turno · doble 6'
+											: 'Tu turno'
 										: `Pasas en ${passSeconds}s`}
 								</p>
 							)}
@@ -490,26 +644,51 @@ export default function GameTable({
 									Pasar
 								</button>
 							)}
-							<div className='flex items-end justify-center gap-1 rounded-xl bg-[#5a3016] px-3 py-1 shadow-md'>
-								{myPlayer.hand.map((tile, index) => {
-									const playable = myTurn && isPlayable(tile, game.board);
+							<div className='hand-rack flex items-end justify-center gap-1 rounded-xl bg-[#5a3016] px-3 py-1 shadow-md'>
+								<div
+									ref={handRowRef}
+									className='flex items-end gap-1'
+								>
+									{myPlayer.hand.map((tile, index) => {
+										const playable =
+											myTurn &&
+											isPlayable(tile, game.board, openingDoubleSix);
+										const lifting = lift?.index === index;
 
-									return (
-										<Domino
-											key={tile.id}
-											tile={tile}
-											selected={selectedTile?.id === tile.id}
-											onClick={() => selectTile(tile)}
-											disabled={!myTurn || !playable}
-											playable={playable}
-											orientation='hand'
-											draggable={myTurn}
-											onDragStart={() => handleDragStart(index)}
-											onDragOver={(event) => event.preventDefault()}
-											onDrop={() => handleDrop(index)}
-										/>
-									);
-								})}
+										return (
+											<div
+												key={tile.id}
+												className={`hand-tile-slot cursor-grab active:cursor-grabbing ${
+													lifting ? 'is-lifting' : ''
+												}`}
+												style={
+													lifting && lift
+														? {
+																transform: `translate(${lift.dx}px, ${lift.dy - 16}px) scale(1.08) rotate(-4deg)`,
+															}
+														: undefined
+												}
+												onPointerDown={(event) =>
+													onHandPointerDown(event, index)
+												}
+												onPointerMove={onHandPointerMove}
+												onPointerUp={(event) => onHandPointerUp(event, tile)}
+												onPointerCancel={() => {
+													dragRef.current = null;
+													setLift(null);
+												}}
+											>
+												<Domino
+													tile={tile}
+													selected={selectedTile?.id === tile.id}
+													playable={playable}
+													orientation='hand'
+													className='pointer-events-none'
+												/>
+											</div>
+										);
+									})}
+								</div>
 								<span className='ml-1 text-[9px] text-[#f4e6c3]/80'>
 									{getDisplayScore(game, myTeam)} pts
 								</span>

@@ -62,6 +62,8 @@ type DominoProps = {
 	onDragStart?: () => void;
 	onDragOver?: (event: React.DragEvent<HTMLButtonElement>) => void;
 	onDrop?: () => void;
+	className?: string;
+	style?: React.CSSProperties;
 };
 
 function Face({
@@ -113,6 +115,8 @@ export default function Domino({
 	onDragStart,
 	onDragOver,
 	onDrop,
+	className: extraClassName,
+	style,
 }: DominoProps) {
 	const visualSize = size ?? (orientation === 'board' ? 'board' : 'hand');
 	const isHand = orientation === 'hand' && !heading;
@@ -155,6 +159,7 @@ export default function Domino({
 		faceDown ? 'tile-back' : '',
 		draggable ? 'cursor-grab active:cursor-grabbing' : '',
 		onClick && !disabled ? 'cursor-pointer' : 'cursor-default',
+		extraClassName ?? '',
 	]
 		.filter(Boolean)
 		.join(' ');
@@ -186,7 +191,7 @@ export default function Domino({
 			onDrop={onDrop}
 			aria-label={label}
 			className={className}
-			style={{ width, height }}
+			style={{ width, height, ...style }}
 		>
 			{body}
 		</button>

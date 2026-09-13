@@ -126,6 +126,135 @@ body {
   background: #c8b189;
 }
 
+.hand-rack {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.hand-tile-slot {
+  touch-action: none;
+}
+
+.hand-tile-slot.is-lifting {
+  z-index: 6;
+  transition: none;
+}
+
+.hand-tile-slot.is-lifting .tile-body {
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.38);
+}
+
+@keyframes mesa-tremble {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+
+  18% {
+    transform: translate3d(-4px, 1px, 0);
+  }
+
+  36% {
+    transform: translate3d(5px, -2px, 0);
+  }
+
+  54% {
+    transform: translate3d(-3px, 2px, 0);
+  }
+
+  72% {
+    transform: translate3d(3px, -1px, 0);
+  }
+
+  86% {
+    transform: translate3d(-2px, 1px, 0);
+  }
+}
+
+.mesa-tremble {
+  animation: mesa-tremble 0.36s ease-in-out 0.18s;
+}
+
+@keyframes tile-arrive {
+  0% {
+    transform: translate(var(--from-x, 0), var(--from-y, 42px))
+      rotate(var(--from-rot, -12deg)) scale(0.7);
+    opacity: 0.12;
+  }
+
+  64% {
+    transform: translate(calc(var(--from-x, 0px) * -0.08), calc(var(--from-y, 42px) * -0.08))
+      rotate(0deg) scale(1.1);
+    opacity: 1;
+  }
+
+  100% {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.tile-arrive {
+  animation: tile-arrive 0.34s cubic-bezier(0.18, 0.88, 0.24, 1);
+}
+
+.tile-arrive-s {
+  --from-x: 0px;
+  --from-y: 44px;
+  --from-rot: -12deg;
+}
+
+.tile-arrive-n {
+  --from-x: 0px;
+  --from-y: -44px;
+  --from-rot: 12deg;
+}
+
+.tile-arrive-e {
+  --from-x: 38px;
+  --from-y: 10px;
+  --from-rot: 11deg;
+}
+
+.tile-arrive-w {
+  --from-x: -38px;
+  --from-y: 10px;
+  --from-rot: -11deg;
+}
+
+@keyframes tile-capicua {
+  0% {
+    transform: translateX(0) scale(1);
+  }
+
+  28% {
+    transform: translateX(-16px) scale(1.1);
+  }
+
+  50% {
+    transform: translateX(0) scale(1);
+  }
+
+  72% {
+    transform: translateX(16px) scale(1.1);
+  }
+
+  100% {
+    transform: translateX(0) scale(1);
+  }
+}
+
+.tile-capicua {
+  animation: tile-capicua 0.42s ease-in-out;
+}
+
+.tile-arrive.tile-capicua {
+  animation:
+    tile-arrive 0.32s cubic-bezier(0.18, 0.88, 0.24, 1),
+    tile-capicua 0.4s ease-in-out 0.28s;
+}
+
 .drop-zone {
   min-width: 88px;
   padding: 0.7rem 0.9rem;

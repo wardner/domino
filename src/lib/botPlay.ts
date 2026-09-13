@@ -3,6 +3,7 @@ import {
 	getLeftEnd,
 	getRightEnd,
 	isPlayable,
+	mustOpenWithDoubleSix,
 } from '@/lib/dominoes';
 
 export const BOT_THINK_MS = 2000;
@@ -13,7 +14,9 @@ export type BotMove =
 
 export function chooseBotMove(game: GameState): BotMove {
 	const bot = game.players[game.currentPlayer];
-	const playableTile = bot.hand.find((tile) => isPlayable(tile, game.board));
+	const playableTile = bot.hand.find((tile) =>
+		isPlayable(tile, game.board, mustOpenWithDoubleSix(game)),
+	);
 
 	if (!playableTile) {
 		return { type: 'pass' };

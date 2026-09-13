@@ -437,16 +437,75 @@ export function canPlayRight(tile: Tile, board: BoardTile[]): boolean {
 	return tile.a === right || tile.b === right;
 }
 
-export function isPlayable(tile: Tile, board: BoardTile[]): boolean {
+export function mustOpenWithDoubleSix(state: {
+	round: number;
+	board: BoardTile[];
+}): boolean {
+	return state.round === 1 && state.board.length === 0;
+}
+
+export function isDoubleSix(tile: Tile): boolean {
+	return tile.a === 6 && tile.b === 6;
+}
+
+export function isPlayable(
+	tile: Tile,
+	board: BoardTile[],
+	requireDoubleSix = false,
+): boolean {
 	if (board.length === 0) {
-		return true;
+		return requireDoubleSix ? isDoubleSix(tile) : true;
 	}
 
 	return canPlayLeft(tile, board) || canPlayRight(tile, board);
 }
 
-export function hasPlayableTile(player: Player, board: BoardTile[]): boolean {
-	return player.hand.some((tile) => isPlayable(tile, board));
+export function hasPlayableTile(
+	player: Player,
+	board: BoardTile[],
+	requireDoubleSix = false,
+): boolean {
+	return player.hand.some((tile) => isPlayable(tile, board, requireDoubleSix));
+}
+
+function isGameBlocked(state: GameState): boolean {
+	if (state.board.length === 0) {
+		return false;
+	}
+
+	return state.players.every(
+		(player) => !hasPlayableTile(player, state.board),
+	);
+}
+
+function resolveTranca(state: GameState): GameState {
+	const trancador = state.lastPlayerToPlay;
+
+	if (trancador === null) {
+		throw new Error('No se pudo determinar el trancador');
+	}
+
+	/*
+	 * Se compara el trancador contra
+	 * el jugador inmediatamente a su derecha.
+	 */
+	const opponent = rightPlayer(trancador);
+
+	const trancadorPoints = playerHandPoints(state.players[trancador]);
+
+	const opponentPoints = playerHandPoints(state.players[opponent]);
+
+	/*
+	 * Empate:
+	 * gana el trancador.
+	 *
+	 * Solo pierde el trancador si tiene
+	 * MÁS tantos que el contrario.
+	 */
+	const trancaWinner =
+		trancadorPoints <= opponentPoints ? trancador : opponent;
+
+	return finishRound(state, trancaWinner, true, trancador);
 }
 
 export function reorderHand(
@@ -711,8 +770,12 @@ export function playTile(
 
 	const tile = player.hand[tileIndex];
 
-	if (!isPlayable(tile, state.board)) {
-		throw new Error('Ese domino no se puede jugar');
+	if (!isPlayable(tile, state.board, mustOpenWithDoubleSix(state))) {
+		throw new Error(
+			mustOpenWithDoubleSix(state)
+				? 'La partida sale con doble 6'
+				: 'Ese domino no se puede jugar',
+		);
 	}
 
 	const canLeft = canPlayLeft(tile, state.board);
@@ -828,6 +891,19 @@ export function playTile(
 		return finishRound(nextState, state.currentPlayer, false, null);
 	}
 
+	/*
+	 * TRANCA:
+	 *
+	 * Si nadie puede jugar después de esta
+	 * ficha, la mano termina de una.
+	 *
+	 * No se espera a los pases ni se da
+	 * pase corrido.
+	 */
+	if (isGameBlocked(nextState)) {
+		return resolveTranca(nextState);
+	}
+
 	return nextState;
 }
 
@@ -880,6 +956,16 @@ export function passTurn(state: GameState): GameState {
 	}
 
 	/*
+	 * TRANCA:
+	 *
+	 * Si nadie puede conectar, no es pase
+	 * corrido: se cuenta de una.
+	 */
+	if (isGameBlocked(state)) {
+		return resolveTranca(nextState);
+	}
+
+	/*
 	 * PASE CORRIDO:
 	 *
 	 * Después de la jugada:
@@ -887,49 +973,23 @@ export function passTurn(state: GameState): GameState {
 	 * jugador 2 pasa
 	 * jugador 3 pasa
 	 *
+	 * Solo aplica si el que tiró todavía
+	 * puede jugar. Si también está trabado
+	 * es tranca, no bonus.
+	 *
 	 * Los 30 corresponden al jugador
 	 * que hizo la última jugada.
 	 */
 	if (nextPassStreak === 3 && state.lastPlayerToPlay !== null) {
-		nextState = addBonus(nextState, state.lastPlayerToPlay, 'pase-corrido');
+		const lastPlayer = state.players[state.lastPlayerToPlay];
+
+		if (hasPlayableTile(lastPlayer, state.board)) {
+			nextState = addBonus(nextState, state.lastPlayerToPlay, 'pase-corrido');
+		}
 	}
 
-	/*
-	 * TRANCA:
-	 *
-	 * Cuatro pases seguidos.
-	 *
-	 * El TRANCADOR es quien hizo la última
-	 * jugada antes de los pases.
-	 */
 	if (nextPassStreak >= 4) {
-		const trancador = state.lastPlayerToPlay;
-
-		if (trancador === null) {
-			throw new Error('No se pudo determinar el trancador');
-		}
-
-		/*
-		 * Se compara el trancador contra
-		 * el jugador inmediatamente a su derecha.
-		 */
-		const opponent = rightPlayer(trancador);
-
-		const trancadorPoints = playerHandPoints(state.players[trancador]);
-
-		const opponentPoints = playerHandPoints(state.players[opponent]);
-
-		/*
-		 * Empate:
-		 * gana el trancador.
-		 *
-		 * Solo pierde el trancador si tiene
-		 * MÁS tantos que el contrario.
-		 */
-		const trancaWinner =
-			trancadorPoints <= opponentPoints ? trancador : opponent;
-
-		return finishRound(nextState, trancaWinner, true, trancador);
+		return resolveTranca(nextState);
 	}
 
 	return nextState;
