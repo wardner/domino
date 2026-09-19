@@ -1,5 +1,12 @@
-import { BOARD_TILE_LONG, BOARD_TILE_SHORT } from '@/lib/boardLayout';
+import { createContext, useContext } from 'react';
+
 import { Tile } from '@/lib/dominoes';
+import {
+	DEFAULT_TABLE_SCALE,
+	type TableScale,
+} from '@/lib/tileScale';
+
+export const TileScaleContext = createContext<TableScale>(DEFAULT_TABLE_SCALE);
 
 const PIPS: Record<number, Array<[number, number]>> = {
 	0: [],
@@ -36,11 +43,15 @@ const PIPS: Record<number, Array<[number, number]>> = {
 	],
 };
 
-export const TILE_SIZE = {
-	board: { regular: BOARD_TILE_LONG, double: BOARD_TILE_SHORT },
-	hand: { regular: 34, double: 68 },
-	mini: { regular: 12, double: 24 },
-};
+function sizesFromScale(table: TableScale) {
+	return {
+		board: { regular: table.boardLong, double: table.boardShort },
+		hand: { regular: table.handShort, double: table.handLong },
+		mini: { regular: table.miniShort, double: table.miniLong },
+	};
+}
+
+export const TILE_SIZE = sizesFromScale(DEFAULT_TABLE_SCALE);
 
 type DominoOrientation = 'hand' | 'board';
 type DominoSize = 'hand' | 'board' | 'mini';
@@ -70,14 +81,19 @@ type DominoProps = {
 function Face({
 	value,
 	size,
+	short,
 	horizontal = false,
 }: {
 	value: number;
 	size: 'hand' | 'board' | 'mini';
+	short: number;
 	horizontal?: boolean;
 }) {
-	const box = size === 'mini' ? 10 : size === 'board' ? 23 : 30;
-	const pip = size === 'mini' ? 2 : size === 'board' ? 4 : 5;
+	const box =
+		size === 'mini'
+			? Math.max(6, Math.round(short * 0.82))
+			: Math.max(10, Math.round(short * 0.84));
+	const pip = Math.max(2, Math.round(box / 6));
 
 	return (
 		<div
@@ -126,6 +142,8 @@ export default function Domino({
 	className: extraClassName,
 	style,
 }: DominoProps) {
+	const table = useContext(TileScaleContext);
+	const tileSize = sizesFromScale(table);
 	const visualSize = size ?? (orientation === 'board' ? 'board' : 'hand');
 	const isHand = orientation === 'hand' && !heading;
 	const isDouble = Boolean(tile && tile.a === tile.b);
@@ -144,16 +162,16 @@ export default function Domino({
 
 	const short =
 		visualSize === 'mini'
-			? TILE_SIZE.mini.regular
+			? tileSize.mini.regular
 			: visualSize === 'board'
-				? TILE_SIZE.board.double
-				: TILE_SIZE.hand.regular;
+				? tileSize.board.double
+				: tileSize.hand.regular;
 	const long =
 		visualSize === 'mini'
-			? TILE_SIZE.mini.double
+			? tileSize.mini.double
 			: visualSize === 'board'
-				? TILE_SIZE.board.regular
-				: TILE_SIZE.hand.double;
+				? tileSize.board.regular
+				: tileSize.hand.double;
 
 	const width = vertical ? short : long;
 	const height = vertical ? long : short;
@@ -182,9 +200,19 @@ export default function Domino({
 		<div className='tile-back-pattern h-full w-full' />
 	) : (
 		<>
-			<Face value={first} size={visualSize} horizontal={!vertical} />
+			<Face
+				value={first}
+				size={visualSize}
+				short={short}
+				horizontal={!vertical}
+			/>
 			<div className={vertical ? 'tile-divider-h' : 'tile-divider-v'} />
-			<Face value={second} size={visualSize} horizontal={!vertical} />
+			<Face
+				value={second}
+				size={visualSize}
+				short={short}
+				horizontal={!vertical}
+			/>
 		</>
 	);
 

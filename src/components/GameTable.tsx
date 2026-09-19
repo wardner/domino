@@ -11,9 +11,13 @@ import {
 
 type StyleVars = CSSProperties & Record<`--${string}`, string>;
 
-import Domino from '@/components/Domino';
+import Domino, { TileScaleContext } from '@/components/Domino';
 import { BOT_THINK_MS, chooseBotMove } from '@/lib/botPlay';
 import { layoutBoardPath } from '@/lib/boardLayout';
+import {
+	readViewportSize,
+	tableScaleFromViewport,
+} from '@/lib/tileScale';
 import {
 	GameState,
 	getDisplayScore,
@@ -70,6 +74,8 @@ export default function GameTable({
 	const [error, setError] = useState<string | null>(null);
 	const [passSeconds, setPassSeconds] = useState(PASS_WAIT_SEC);
 	const [mesaWidth, setMesaWidth] = useState(280);
+	const [viewport, setViewport] = useState({ width: 390, height: 844 });
+	const [handFit, setHandFit] = useState(1);
 	const [arrivingId, setArrivingId] = useState<string | null>(null);
 	const [showResult, setShowResult] = useState(false);
 	const [peekTable, setPeekTable] = useState(false);
@@ -128,10 +134,12 @@ export default function GameTable({
 		openingDoubleSix,
 	);
 	const teamNames = teamNamesFromGame(game);
+	const tableScale = tableScaleFromViewport(viewport.width, viewport.height);
 	const boardPath = layoutBoardPath(
 		game.board,
 		mesaWidth,
 		game.openingTileId,
+		{ long: tableScale.boardLong, short: tableScale.boardShort },
 	);
 
 	const dealing =
@@ -221,28 +229,68 @@ export default function GameTable({
 		};
 	}, [canHumanPlay, dealing, game, myTurn]);
 
-	useEffect(() => {
-		const el = mesaRef.current;
+	useLayoutEffect(() => {
+		const apply = () => {
+			const next = readViewportSize();
+			setViewport((prev) =>
+				prev.width === next.width && prev.height === next.height
+					? prev
+					: next,
+			);
 
-		if (!el) {
-			return;
-		}
+			const mesa = mesaRef.current;
 
-		const update = () => {
-			setMesaWidth(Math.max(160, Math.floor(el.clientWidth - 8)));
+			if (mesa) {
+				setMesaWidth(Math.max(120, Math.floor(mesa.clientWidth - 8)));
+			}
+
+			const row = handRowRef.current;
+			const rack = row?.parentElement;
+
+			if (row && rack) {
+				const score = rack.querySelector('span');
+				const extra = (score?.getBoundingClientRect().width ?? 0) + 12;
+				const avail = Math.max(1, rack.clientWidth - extra);
+				const need = Math.max(1, row.scrollWidth);
+				const nextFit = Math.min(1, avail / need);
+				setHandFit((prev) =>
+					Math.abs(prev - nextFit) < 0.02 ? prev : nextFit,
+				);
+			}
 		};
 
-		update();
+		const delays = [50, 180, 360];
+		let timers: number[] = [];
+		const applySoon = () => {
+			apply();
+			timers.forEach((timer) => window.clearTimeout(timer));
+			timers = delays.map((ms) => window.setTimeout(apply, ms));
+		};
 
-		const observer = new ResizeObserver(update);
-		observer.observe(el);
-		window.addEventListener('orientationchange', update);
+		apply();
+
+		const mesa = mesaRef.current;
+		const observer = new ResizeObserver(applySoon);
+
+		if (mesa) {
+			observer.observe(mesa);
+		}
+
+		window.addEventListener('resize', applySoon);
+		window.addEventListener('orientationchange', applySoon);
+		window.visualViewport?.addEventListener('resize', applySoon);
+		const media = window.matchMedia('(orientation: landscape)');
+		media.addEventListener('change', applySoon);
 
 		return () => {
 			observer.disconnect();
-			window.removeEventListener('orientationchange', update);
+			timers.forEach((timer) => window.clearTimeout(timer));
+			window.removeEventListener('resize', applySoon);
+			window.removeEventListener('orientationchange', applySoon);
+			window.visualViewport?.removeEventListener('resize', applySoon);
+			media.removeEventListener('change', applySoon);
 		};
-	}, [game]);
+	}, [game.round, myPlayer.hand.length, dealtCount, tableScale.handShort]);
 
 	useEffect(() => {
 		const prevIds = prevTileIdsRef.current;
@@ -742,8 +790,9 @@ export default function GameTable({
 	const leftOpponent = game.players[leftSeat];
 
 	return (
+		<TileScaleContext.Provider value={tableScale}>
 		<main className='felt-page h-dvh overflow-hidden text-[#f4e6c3]'>
-			<div className='game-shell mx-auto flex h-dvh w-full max-w-md flex-col px-2 py-1.5 landscape:max-w-none landscape:px-3 landscape:py-1'>
+			<div className='game-shell mx-auto flex h-dvh min-h-0 w-full min-w-0 max-w-md flex-col overflow-hidden px-2 py-1.5 landscape:max-w-none landscape:px-3 landscape:py-1'>
 				<header className='flex shrink-0 items-center justify-between gap-2 landscape:gap-3'>
 					<p className='text-[10px] uppercase tracking-[0.16em] text-emerald-100/60'>
 						Ronda {game.round}
@@ -843,9 +892,9 @@ export default function GameTable({
 						</div>
 
 						<div className='flex min-h-0 flex-1 items-stretch'>
-							<div className='flex w-10 shrink-0 flex-col items-center justify-center gap-1'>
+							<div className='flex w-8 shrink-0 flex-col items-center justify-center gap-1 landscape:w-9'>
 								<span
-									className={`max-w-10 truncate text-[8px] ${
+									className={`max-w-8 truncate text-[8px] landscape:max-w-9 ${
 										game.currentPlayer === leftSeat
 											? 'text-yellow-300'
 											: 'text-white/70'
@@ -929,9 +978,9 @@ export default function GameTable({
 								)}
 							</div>
 
-							<div className='flex w-10 shrink-0 flex-col items-center justify-center gap-1'>
+							<div className='flex w-8 shrink-0 flex-col items-center justify-center gap-1 landscape:w-9'>
 								<span
-									className={`max-w-10 truncate text-[8px] ${
+									className={`max-w-8 truncate text-[8px] landscape:max-w-9 ${
 										game.currentPlayer === rightSeat
 											? 'text-yellow-300'
 											: 'text-white/70'
@@ -1003,10 +1052,18 @@ export default function GameTable({
 									Pasar
 								</button>
 							)}
-							<div className='hand-rack flex items-end justify-center gap-1 rounded-xl bg-[#5a3016] px-3 py-1 shadow-md'>
+							<div className='hand-rack flex min-w-0 max-w-full items-end justify-center gap-1 overflow-hidden rounded-xl bg-[#5a3016] px-2 py-1 shadow-md sm:px-3'>
 								<div
 									ref={handRowRef}
-									className='flex items-end gap-1'
+									className='flex items-end gap-0.5 sm:gap-1'
+									style={
+										handFit < 0.995
+											? {
+													transform: `scale(${handFit})`,
+													transformOrigin: 'bottom center',
+												}
+											: undefined
+									}
 								>
 									{myPlayer.hand.slice(0, dealtCount).map((tile, index) => {
 										const playable =
@@ -1063,6 +1120,7 @@ export default function GameTable({
 				</section>
 			</div>
 		</main>
+		</TileScaleContext.Provider>
 	);
 }
 
@@ -1184,15 +1242,28 @@ function FitBoard({
 			setView({ scale: nextScale, left, top });
 		};
 
+		const delays = [50, 180, 360];
+		let timers: number[] = [];
+		const updateSoon = () => {
+			update();
+			timers.forEach((timer) => window.clearTimeout(timer));
+			timers = delays.map((ms) => window.setTimeout(update, ms));
+		};
+
 		update();
 
-		const observer = new ResizeObserver(update);
+		const observer = new ResizeObserver(updateSoon);
 		observer.observe(outer);
-		window.addEventListener('orientationchange', update);
+		window.addEventListener('resize', updateSoon);
+		window.addEventListener('orientationchange', updateSoon);
+		window.visualViewport?.addEventListener('resize', updateSoon);
 
 		return () => {
 			observer.disconnect();
-			window.removeEventListener('orientationchange', update);
+			timers.forEach((timer) => window.clearTimeout(timer));
+			window.removeEventListener('resize', updateSoon);
+			window.removeEventListener('orientationchange', updateSoon);
+			window.visualViewport?.removeEventListener('resize', updateSoon);
 		};
 	}, [width, height, anchorY]);
 

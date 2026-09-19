@@ -1,4 +1,8 @@
 import { BoardTile, Tile } from '@/lib/dominoes';
+import {
+	BASE_BOARD_LONG,
+	BASE_BOARD_SHORT,
+} from '@/lib/tileScale';
 
 export type Heading = 'E' | 'W' | 'S' | 'N';
 export type Arm = 'left' | 'right';
@@ -13,24 +17,41 @@ export type PlacedBoardTile = {
 	faceB: number;
 };
 
-export const BOARD_TILE_LONG = 56;
-export const BOARD_TILE_SHORT = 28;
-const LONG = BOARD_TILE_LONG;
-const SHORT = BOARD_TILE_SHORT;
+export const BOARD_TILE_LONG = BASE_BOARD_LONG;
+export const BOARD_TILE_SHORT = BASE_BOARD_SHORT;
 const DROP_COUNT = 2;
 
-export function tileBox(isDouble: boolean, heading: Heading) {
+export type TileSpan = {
+	long: number;
+	short: number;
+};
+
+const DEFAULT_SPAN: TileSpan = {
+	long: BOARD_TILE_LONG,
+	short: BOARD_TILE_SHORT,
+};
+
+export function tileBox(
+	isDouble: boolean,
+	heading: Heading,
+	span: TileSpan = DEFAULT_SPAN,
+) {
 	const vertical = isDouble || heading === 'S' || heading === 'N';
 
 	return {
-		w: vertical ? SHORT : LONG,
-		h: vertical ? LONG : SHORT,
+		w: vertical ? span.short : span.long,
+		h: vertical ? span.long : span.short,
 	};
 }
 
-function laneY(cy: number, isDouble: boolean, heading: Heading) {
+function laneY(
+	cy: number,
+	isDouble: boolean,
+	heading: Heading,
+	span: TileSpan,
+) {
 	if ((heading === 'E' || heading === 'W') && isDouble) {
-		return cy - (LONG - SHORT) / 2;
+		return cy - (span.long - span.short) / 2;
 	}
 
 	return cy;
@@ -66,6 +87,7 @@ function placeArm(
 	rightBound: number,
 	arm: Arm,
 	lastTile: { x: number; y: number; w: number; h: number },
+	span: TileSpan,
 ): PlacedBoardTile[] {
 	const placed: PlacedBoardTile[] = [];
 	let heading: Heading = startHeading;
@@ -83,9 +105,9 @@ function placeArm(
 
 		if (pendingDrop === 0) {
 			const hitRight =
-				heading === 'E' && cx + tileBox(isDouble, 'E').w > rightBound;
+				heading === 'E' && cx + tileBox(isDouble, 'E', span).w > rightBound;
 			const hitLeft =
-				heading === 'W' && cx - tileBox(isDouble, 'W').w < leftBound;
+				heading === 'W' && cx - tileBox(isDouble, 'W', span).w < leftBound;
 
 			if (hitRight || hitLeft) {
 				/*
@@ -98,19 +120,19 @@ function placeArm(
 			}
 		}
 
-		const { w, h } = tileBox(isDouble, nextHeading);
+		const { w, h } = tileBox(isDouble, nextHeading, span);
 		let x = 0;
 		let y = 0;
 
 		if (nextHeading === 'E') {
 			x = cx;
-			y = laneY(cy, isDouble, 'E');
+			y = laneY(cy, isDouble, 'E', span);
 			cx = x + w;
 			heading = 'E';
 			lastEW = 'E';
 		} else if (nextHeading === 'W') {
 			x = cx - w;
-			y = laneY(cy, isDouble, 'W');
+			y = laneY(cy, isDouble, 'W', span);
 			cx = x;
 			heading = 'W';
 			lastEW = 'W';
@@ -178,12 +200,13 @@ export function layoutBoardPath(
 	board: BoardTile[],
 	maxWidth: number,
 	openingTileId?: string | null,
+	span: TileSpan = DEFAULT_SPAN,
 ) {
 	if (board.length === 0) {
 		return { tiles: [] as PlacedBoardTile[], width: 0, height: 0, anchorY: 0 };
 	}
 
-	const limit = Math.max(Math.floor(maxWidth), LONG * 3);
+	const limit = Math.max(Math.floor(maxWidth), span.long * 3);
 	const originIndex = Math.max(
 		0,
 		openingTileId
@@ -192,9 +215,9 @@ export function layoutBoardPath(
 	);
 	const origin = board[originIndex];
 	const originDouble = origin.tile.a === origin.tile.b;
-	const originBox = tileBox(originDouble, 'E');
+	const originBox = tileBox(originDouble, 'E', span);
 	const originX = (limit - originBox.w) / 2;
-	const originY = laneY(0, originDouble, 'E');
+	const originY = laneY(0, originDouble, 'E', span);
 	const originLast = {
 		x: originX,
 		y: originY,
@@ -224,6 +247,7 @@ export function layoutBoardPath(
 			limit,
 			'right',
 			originLast,
+			span,
 		),
 		...placeArm(
 			board.slice(0, originIndex).reverse(),
@@ -234,6 +258,7 @@ export function layoutBoardPath(
 			limit,
 			'left',
 			originLast,
+			span,
 		),
 	);
 
@@ -241,13 +266,13 @@ export function layoutBoardPath(
 	const minY = Math.min(...tiles.map((tile) => tile.y));
 	const maxX = Math.max(
 		...tiles.map((tile) => {
-			const box = tileBox(tile.tile.a === tile.tile.b, tile.heading);
+			const box = tileBox(tile.tile.a === tile.tile.b, tile.heading, span);
 			return tile.x + box.w;
 		}),
 	);
 	const maxY = Math.max(
 		...tiles.map((tile) => {
-			const box = tileBox(tile.tile.a === tile.tile.b, tile.heading);
+			const box = tileBox(tile.tile.a === tile.tile.b, tile.heading, span);
 			return tile.y + box.h;
 		}),
 	);
