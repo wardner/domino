@@ -33,10 +33,12 @@ export default function Home() {
 	const [error, setError] = useState<string | null>(null);
 	const [busy, setBusy] = useState(false);
 	const [localGame, setLocalGame] = useState<GameState | null>(null);
+	const [ready, setReady] = useState(false);
 
 	useEffect(() => {
 		setPlayerId(getOrCreatePlayerId());
 		setName(readStoredName());
+		setReady(true);
 
 		const params = new URLSearchParams(window.location.search);
 
@@ -149,6 +151,17 @@ export default function Home() {
 				onReset={() => setLocalGame(createGame(BOT_NAMES))}
 				onLeave={() => setLocalGame(null)}
 			/>
+		);
+	}
+
+	if (!ready) {
+		return (
+			<main
+				className='felt-page flex min-h-dvh items-center justify-center p-4 text-[#f4e6c3]'
+				suppressHydrationWarning
+			>
+				<div className='w-full max-w-sm rounded-2xl bg-black/35 p-4' />
+			</main>
 		);
 	}
 

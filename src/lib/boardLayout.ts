@@ -13,8 +13,10 @@ export type PlacedBoardTile = {
 	faceB: number;
 };
 
-const LONG = 42;
-const SHORT = 21;
+export const BOARD_TILE_LONG = 56;
+export const BOARD_TILE_SHORT = 28;
+const LONG = BOARD_TILE_LONG;
+const SHORT = BOARD_TILE_SHORT;
 const DROP_COUNT = 2;
 
 export function tileBox(isDouble: boolean, heading: Heading) {
@@ -159,8 +161,8 @@ function placeArm(
 		placed.push({
 			key: `${arm}-${item.tile.id}-${index}`,
 			tile: item.tile,
-			x,
-			y,
+			x: Math.round(x),
+			y: Math.round(y),
 			heading: nextHeading,
 			faceA,
 			faceB,
@@ -181,7 +183,7 @@ export function layoutBoardPath(
 		return { tiles: [] as PlacedBoardTile[], width: 0, height: 0, anchorY: 0 };
 	}
 
-	const limit = Math.max(maxWidth, LONG * 5);
+	const limit = Math.max(Math.floor(maxWidth), LONG * 3);
 	const originIndex = Math.max(
 		0,
 		openingTileId
@@ -257,8 +259,8 @@ export function layoutBoardPath(
 	return {
 		tiles: tiles.map((tile) => ({
 			...tile,
-			x: tile.x - originX + sidePad,
-			y: tile.y - minY,
+			x: Math.round(tile.x - originX + sidePad),
+			y: Math.round(tile.y - minY),
 		})),
 		width: sidePad * 2 + originBox.w,
 		height: maxY - minY,

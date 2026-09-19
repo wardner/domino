@@ -25,6 +25,14 @@ import {
 	Tile,
 } from '@/lib/dominoes';
 
+const PASS_WAIT_MS = 3000;
+const PASS_WAIT_SEC = PASS_WAIT_MS / 1000;
+const BONUS_BURST_MS = 1350;
+const PASS_FX_MS = 1350;
+const CAPICUA_ANIM_MS = 2000;
+const CAPICUA_HOLD_MS = 3000;
+const DEAL_STEP_MS = 90;
+
 export function teamNamesFromGame(game: GameState): [string, string] {
 	return [
 		`${game.players[0].name} + ${game.players[2].name}`,
@@ -57,10 +65,19 @@ export default function GameTable({
 }) {
 	const [selectedTile, setSelectedTile] = useState<Tile | null>(null);
 	const [error, setError] = useState<string | null>(null);
-	const [passSeconds, setPassSeconds] = useState(5);
+	const [passSeconds, setPassSeconds] = useState(PASS_WAIT_SEC);
 	const [mesaWidth, setMesaWidth] = useState(280);
 	const [arrivingId, setArrivingId] = useState<string | null>(null);
-	const [holdTable, setHoldTable] = useState(false);
+	const [showResult, setShowResult] = useState(false);
+	const [peekTable, setPeekTable] = useState(false);
+	const [dealtCount, setDealtCount] = useState(
+		game.firstMoveMade || game.board.length > 0
+			? game.players[mySeat].hand.length
+			: 0,
+	);
+	const [dealReady, setDealReady] = useState(
+		game.firstMoveMade || game.board.length > 0,
+	);
 	const [lift, setLift] = useState<{
 		index: number;
 		dx: number;
@@ -69,6 +86,11 @@ export default function GameTable({
 	const [bonusBurst, setBonusBurst] = useState<{
 		playerIndex: number;
 		type: BonusType;
+		key: number;
+	} | null>(null);
+	const [passFx, setPassFx] = useState<{
+		seat: number;
+		nextSeat: number;
 		key: number;
 	} | null>(null);
 	const mesaRef = useRef<HTMLDivElement>(null);
@@ -82,7 +104,12 @@ export default function GameTable({
 		active: boolean;
 	} | null>(null);
 	const prevTileIdsRef = useRef(new Set(game.board.map((item) => item.tile.id)));
-	const prevBonusCountRef = useRef(game.roundBonuses.length);
+	const seenBonusCountRef = useRef(game.roundBonuses.length);
+	const prevPassRef = useRef({
+		streak: game.passStreak,
+		round: game.round,
+	});
+	const completionIdRef = useRef('');
 
 	onPlayRef.current = onPlay;
 	onPassRef.current = onPass;
@@ -104,8 +131,50 @@ export default function GameTable({
 		game.openingTileId,
 	);
 
+	const dealing =
+		!game.firstMoveMade &&
+		game.board.length === 0 &&
+		!game.roundComplete &&
+		!dealReady;
+
 	useEffect(() => {
-		if (!autoBots || game.roundComplete || game.currentPlayer === mySeat) {
+		if (game.firstMoveMade || game.board.length > 0 || game.roundComplete) {
+			setDealtCount(game.players[mySeat].hand.length);
+			setDealReady(true);
+			return;
+		}
+
+		setDealtCount(0);
+		setDealReady(false);
+		const total = game.players[mySeat].hand.length;
+		const timers: number[] = [];
+		let count = 0;
+
+		const dealNext = () => {
+			count += 1;
+			setDealtCount(count);
+
+			if (count < total) {
+				timers.push(window.setTimeout(dealNext, DEAL_STEP_MS));
+			} else {
+				timers.push(window.setTimeout(() => setDealReady(true), 520));
+			}
+		};
+
+		timers.push(window.setTimeout(dealNext, 160));
+
+		return () => {
+			timers.forEach((timer) => window.clearTimeout(timer));
+		};
+	}, [game.round, mySeat]);
+
+	useEffect(() => {
+		if (
+			!autoBots ||
+			game.roundComplete ||
+			game.currentPlayer === mySeat ||
+			dealing
+		) {
 			return;
 		}
 
@@ -123,15 +192,15 @@ export default function GameTable({
 		return () => {
 			clearTimeout(timer);
 		};
-	}, [autoBots, game, mySeat]);
+	}, [autoBots, dealing, game, mySeat]);
 
 	useEffect(() => {
-		if (game.roundComplete || !myTurn || canHumanPlay) {
-			setPassSeconds(5);
+		if (game.roundComplete || dealing || !myTurn || canHumanPlay) {
+			setPassSeconds(PASS_WAIT_SEC);
 			return;
 		}
 
-		setPassSeconds(5);
+		setPassSeconds(PASS_WAIT_SEC);
 
 		const countdown = setInterval(() => {
 			setPassSeconds((seconds) => (seconds > 0 ? seconds - 1 : 0));
@@ -141,13 +210,13 @@ export default function GameTable({
 			setSelectedTile(null);
 			setError(null);
 			onPassRef.current();
-		}, 5000);
+		}, PASS_WAIT_MS);
 
 		return () => {
 			clearInterval(countdown);
 			clearTimeout(timer);
 		};
-	}, [canHumanPlay, game, myTurn]);
+	}, [canHumanPlay, dealing, game, myTurn]);
 
 	useEffect(() => {
 		const el = mesaRef.current;
@@ -164,9 +233,11 @@ export default function GameTable({
 
 		const observer = new ResizeObserver(update);
 		observer.observe(el);
+		window.addEventListener('orientationchange', update);
 
 		return () => {
 			observer.disconnect();
+			window.removeEventListener('orientationchange', update);
 		};
 	}, [game]);
 
@@ -184,40 +255,54 @@ export default function GameTable({
 		const capicua = Boolean(game.roundResult?.bonuses.includes('capicua'));
 		const timer = window.setTimeout(() => {
 			setArrivingId(null);
-		}, capicua ? 1100 : 360);
+		}, capicua ? CAPICUA_ANIM_MS : 360);
 
 		return () => {
 			window.clearTimeout(timer);
 		};
 	}, [game.board, game.roundResult]);
 
-	useEffect(() => {
-		if (!game.roundComplete) {
-			setHoldTable(false);
+	useLayoutEffect(() => {
+		if (!game.roundComplete || !game.roundResult) {
+			completionIdRef.current = '';
+			setShowResult(false);
+			setPeekTable(false);
 			return;
 		}
 
-		setHoldTable(true);
+		const completionId = `${game.round}-${game.roundResult.winnerPlayer}-${game.roundResult.bonuses.join(',')}`;
 
-		const capicua = Boolean(game.roundResult?.bonuses.includes('capicua'));
+		if (completionIdRef.current !== completionId) {
+			completionIdRef.current = completionId;
+			setShowResult(false);
+			setPeekTable(false);
+		}
+
+		if (showResult) {
+			return;
+		}
+
+		const capicua = game.roundResult.bonuses.includes('capicua');
 		const timer = window.setTimeout(() => {
-			setHoldTable(false);
-		}, capicua ? 2000 : 1500);
+			setShowResult(true);
+		}, capicua ? CAPICUA_HOLD_MS : 1500);
 
 		return () => {
 			window.clearTimeout(timer);
 		};
-	}, [game.round, game.roundComplete, game.roundResult]);
+	}, [game.round, game.roundComplete, game.roundResult, showResult]);
 
 	useEffect(() => {
-		if (game.roundBonuses.length <= prevBonusCountRef.current) {
-			prevBonusCountRef.current = game.roundBonuses.length;
+		const count = game.roundBonuses.length;
+
+		if (count <= seenBonusCountRef.current) {
+			seenBonusCountRef.current = count;
 			return;
 		}
 
-		prevBonusCountRef.current = game.roundBonuses.length;
+		seenBonusCountRef.current = count;
 
-		const type = game.roundBonuses[game.roundBonuses.length - 1];
+		const type = game.roundBonuses[count - 1];
 		const playerIndex = game.lastPlayerToPlay;
 
 		if (!type || playerIndex === null) {
@@ -229,15 +314,61 @@ export default function GameTable({
 			type,
 			key: Date.now(),
 		});
+	}, [game.round, game.roundBonuses.length, game.lastPlayerToPlay]);
+
+	useEffect(() => {
+		if (!bonusBurst) {
+			return;
+		}
 
 		const timer = window.setTimeout(() => {
 			setBonusBurst(null);
-		}, 1350);
+		}, BONUS_BURST_MS);
 
 		return () => {
 			window.clearTimeout(timer);
 		};
-	}, [game.lastPlayerToPlay, game.roundBonuses]);
+	}, [bonusBurst]);
+
+	useEffect(() => {
+		const prev = prevPassRef.current;
+
+		if (game.round !== prev.round) {
+			prevPassRef.current = {
+				streak: game.passStreak,
+				round: game.round,
+			};
+			return;
+		}
+
+		if (game.passStreak > prev.streak) {
+			const seat = (game.currentPlayer + 3) % 4;
+			setPassFx({
+				seat,
+				nextSeat: game.currentPlayer,
+				key: Date.now(),
+			});
+		}
+
+		prevPassRef.current = {
+			streak: game.passStreak,
+			round: game.round,
+		};
+	}, [game.currentPlayer, game.passStreak, game.round]);
+
+	useEffect(() => {
+		if (!passFx) {
+			return;
+		}
+
+		const timer = window.setTimeout(() => {
+			setPassFx(null);
+		}, PASS_FX_MS);
+
+		return () => {
+			window.clearTimeout(timer);
+		};
+	}, [passFx]);
 
 	function getPlayableSides(tile: Tile) {
 		if (game.board.length === 0) {
@@ -261,6 +392,10 @@ export default function GameTable({
 
 	function selectTile(tile: Tile) {
 		setError(null);
+
+		if (dealing) {
+			return;
+		}
 
 		if (!myTurn) {
 			setError('No es tu turno');
@@ -311,6 +446,10 @@ export default function GameTable({
 		event: PointerEvent<HTMLDivElement>,
 		index: number,
 	) {
+		if (dealing) {
+			return;
+		}
+
 		event.preventDefault();
 		event.currentTarget.setPointerCapture(event.pointerId);
 		dragRef.current = {
@@ -380,6 +519,9 @@ export default function GameTable({
 		selectTile(tile);
 	}
 
+	const holdTable = Boolean(
+		game.roundComplete && game.roundResult && !showResult,
+	);
 	const capicuaHold = Boolean(
 		holdTable && game.roundResult?.bonuses.includes('capicua'),
 	);
@@ -407,7 +549,7 @@ export default function GameTable({
 		return 's';
 	})();
 
-	if (game.matchComplete && game.roundResult && !holdTable) {
+	if (game.matchComplete && game.roundResult && showResult && !peekTable) {
 		const result = game.roundResult;
 
 		return (
@@ -421,18 +563,25 @@ export default function GameTable({
 						{teamNames[result.winnerTeam]}
 					</p>
 					<PointsBreakdown result={result} />
-					<div className='mt-2 grid grid-cols-2 gap-1.5 text-sm'>
-						<div className='rounded-lg bg-black/30 py-1.5'>
+					<div className='mt-2 grid grid-cols-2 gap-1.5'>
+						<div className='score-total rounded-lg bg-black/30 py-2 text-3xl'>
 							{result.finalScores[0]}
 						</div>
-						<div className='rounded-lg bg-black/30 py-1.5'>
+						<div className='score-total rounded-lg bg-black/30 py-2 text-3xl'>
 							{result.finalScores[1]}
 						</div>
 					</div>
 					<button
 						type='button'
+						onClick={() => setPeekTable(true)}
+						className='ghost-btn mt-3 w-full'
+					>
+						Ver mesa
+					</button>
+					<button
+						type='button'
 						onClick={onNewMatch}
-						className='action-btn mt-3 w-full'
+						className='action-btn mt-2 w-full'
 					>
 						Nueva partida
 					</button>
@@ -450,7 +599,7 @@ export default function GameTable({
 		);
 	}
 
-	if (game.roundComplete && game.roundResult && !holdTable) {
+	if (game.roundComplete && game.roundResult && showResult && !peekTable) {
 		const result = game.roundResult;
 		const winner = game.players[result.winnerPlayer];
 		const trancador = result.trancador;
@@ -536,14 +685,31 @@ export default function GameTable({
 							);
 						})}
 					</div>
-					<div className='mt-2 grid grid-cols-2 gap-1.5 text-sm'>
-						<div className='rounded-lg bg-black/30 py-1'>
-							Tú {result.finalScores[myTeam]}
+					<div className='mt-2 grid grid-cols-2 gap-1.5'>
+						<div className='rounded-lg bg-black/30 py-2'>
+							<p className='text-[10px] uppercase tracking-wide text-white/50'>
+								Tú
+							</p>
+							<p className='score-total text-3xl'>
+								{result.finalScores[myTeam]}
+							</p>
 						</div>
-						<div className='rounded-lg bg-black/30 py-1'>
-							Ellos {result.finalScores[otherTeam]}
+						<div className='rounded-lg bg-black/30 py-2'>
+							<p className='text-[10px] uppercase tracking-wide text-white/50'>
+								Ellos
+							</p>
+							<p className='score-total text-3xl'>
+								{result.finalScores[otherTeam]}
+							</p>
 						</div>
 					</div>
+					<button
+						type='button'
+						onClick={() => setPeekTable(true)}
+						className='ghost-btn mt-2 w-full'
+					>
+						Ver mesa
+					</button>
 					<button
 						type='button'
 						onClick={onNextRound}
@@ -574,18 +740,50 @@ export default function GameTable({
 
 	return (
 		<main className='felt-page h-dvh overflow-hidden text-[#f4e6c3]'>
-			<div className='mx-auto flex h-dvh w-full max-w-md flex-col px-2 py-1.5'>
-				<header className='flex shrink-0 items-center justify-between gap-2'>
+			<div className='game-shell mx-auto flex h-dvh w-full max-w-md flex-col px-2 py-1.5 landscape:max-w-none landscape:px-3 landscape:py-1'>
+				<header className='flex shrink-0 items-center justify-between gap-2 landscape:gap-3'>
 					<p className='text-[10px] uppercase tracking-[0.16em] text-emerald-100/60'>
 						Ronda {game.round}
 					</p>
-					<div className='flex items-center gap-1.5 text-[11px]'>
-						<span>
-							{getDisplayScore(game, 0)} · {getDisplayScore(game, 1)}
-						</span>
+					<div className='flex items-center gap-3'>
+						<div className='flex items-end gap-3'>
+							<div className='text-center'>
+								<p className='text-[9px] uppercase tracking-wide text-white/45'>
+									{myTeam === 0 ? 'Tú' : 'Ellos'}
+								</p>
+								<p
+									className={`score-total text-3xl landscape:text-[1.75rem] ${
+										myTeam === 0 ? 'text-yellow-300' : 'text-[#f4e6c3]'
+									}`}
+								>
+									{getDisplayScore(game, 0)}
+								</p>
+							</div>
+							<div className='text-center'>
+								<p className='text-[9px] uppercase tracking-wide text-white/45'>
+									{myTeam === 1 ? 'Tú' : 'Ellos'}
+								</p>
+								<p
+									className={`score-total text-3xl landscape:text-[1.75rem] ${
+										myTeam === 1 ? 'text-yellow-300' : 'text-[#f4e6c3]'
+									}`}
+								>
+									{getDisplayScore(game, 1)}
+								</p>
+							</div>
+						</div>
 						{onReset && (
 							<button type='button' onClick={onReset} className='ghost-btn'>
 								Nueva
+							</button>
+						)}
+						{peekTable && (
+							<button
+								type='button'
+								onClick={() => setPeekTable(false)}
+								className='action-btn'
+							>
+								Resultado
 							</button>
 						)}
 						{onLeave && (
@@ -596,11 +794,11 @@ export default function GameTable({
 					</div>
 				</header>
 
-				<section className='table-rail mt-1.5 flex min-h-0 flex-1 flex-col overflow-hidden'>
+				<section className='table-rail mt-1.5 flex min-h-0 flex-1 flex-col overflow-hidden landscape:mt-1'>
 					<div
 						className={`felt-inner relative flex min-h-0 flex-1 flex-col overflow-hidden ${
 							capicuaHold ? 'mesa-tremble' : ''
-						}`}
+						} ${passFx ? 'mesa-tap' : ''}`}
 					>
 						{bonusBurst ? (
 							<BonusBurst
@@ -611,7 +809,15 @@ export default function GameTable({
 								playerName={game.players[bonusBurst.playerIndex].name}
 							/>
 						) : null}
-						<div className='flex shrink-0 flex-col items-center justify-center gap-0.5 px-2 pt-1.5'>
+						{passFx ? (
+							<PassCallout
+								key={passFx.key}
+								seat={passFx.seat}
+								nextSeat={passFx.nextSeat}
+								mySeat={mySeat}
+							/>
+						) : null}
+						<div className='flex shrink-0 flex-col items-center justify-center gap-0.5 px-2 pt-1.5 landscape:pt-1'>
 							<span
 								className={`text-[9px] ${
 									game.currentPlayer === topSeat
@@ -622,7 +828,11 @@ export default function GameTable({
 								{partner.name}
 							</span>
 							<div className='flex items-center justify-center gap-1'>
-								<SideTiles tiles={partner.hand} axis='horizontal' />
+								<SideTiles
+									tiles={partner.hand}
+									axis='horizontal'
+									visible={dealing ? dealtCount : undefined}
+								/>
 								<span className='text-[9px] text-white/70'>
 									{getDisplayScore(game, myTeam)} pts
 								</span>
@@ -640,7 +850,11 @@ export default function GameTable({
 								>
 									{leftOpponent.name}
 								</span>
-								<SideTiles tiles={leftOpponent.hand} axis='vertical' />
+								<SideTiles
+									tiles={leftOpponent.hand}
+									axis='vertical'
+									visible={dealing ? dealtCount : undefined}
+								/>
 								<span className='text-[8px] text-white/70'>
 									{getDisplayScore(game, otherTeam)}
 								</span>
@@ -651,10 +865,17 @@ export default function GameTable({
 								className='relative min-h-0 min-w-0 flex-1 overflow-hidden'
 							>
 								{game.board.length === 0 ? (
-									<div className='flex h-full items-center justify-center px-3 text-center text-[11px] text-emerald-50/70'>
-										{openingDoubleSix
-											? 'Sale el doble 6'
-											: 'Toca una ficha'}
+									<div className='flex h-full flex-col items-center justify-center gap-2 px-3 text-center text-[11px] text-emerald-50/70'>
+										{dealing ? (
+											<DealPile
+												key={dealtCount}
+												remaining={28 - dealtCount * 4}
+											/>
+										) : openingDoubleSix ? (
+											'Sale el doble 6'
+										) : (
+											'Toca una ficha'
+										)}
 									</div>
 								) : (
 									<FitBoard
@@ -715,15 +936,28 @@ export default function GameTable({
 								>
 									{rightOpponent.name}
 								</span>
-								<SideTiles tiles={rightOpponent.hand} axis='vertical' />
+								<SideTiles
+									tiles={rightOpponent.hand}
+									axis='vertical'
+									visible={dealing ? dealtCount : undefined}
+								/>
 								<span className='text-[8px] text-white/70'>
 									{getDisplayScore(game, otherTeam)}
 								</span>
 							</div>
 						</div>
 
-						<div className='flex shrink-0 flex-col items-center gap-1 px-2 pb-1.5'>
-							{myTurn && (
+						<div className='flex shrink-0 flex-col items-center gap-1 px-2 pb-1.5 landscape:pb-1 landscape:gap-0.5'>
+							{peekTable && (
+								<button
+									type='button'
+									onClick={() => setPeekTable(false)}
+									className='action-btn'
+								>
+									Resultado
+								</button>
+							)}
+							{myTurn && !peekTable && !game.roundComplete && !dealing && (
 								<p className='text-[10px]'>
 									{canHumanPlay
 										? openingDoubleSix
@@ -735,25 +969,29 @@ export default function GameTable({
 							{error && (
 								<p className='text-[10px] text-red-200'>{error}</p>
 							)}
-							{selectedTile && leftEnd !== null && rightEnd !== null && (
-								<div className='flex items-center gap-2'>
+							{selectedTile &&
+								leftEnd !== null &&
+								rightEnd !== null &&
+								!peekTable &&
+								!game.roundComplete && (
+								<div className='flex items-center gap-3'>
 									<button
 										type='button'
 										onClick={() => playAutomatically(selectedTile, 'left')}
-										className='action-btn'
+										className='side-pick'
 									>
 										{leftEnd}
 									</button>
 									<button
 										type='button'
 										onClick={() => playAutomatically(selectedTile, 'right')}
-										className='action-btn'
+										className='side-pick'
 									>
 										{rightEnd}
 									</button>
 								</div>
 							)}
-							{myTurn && !canHumanPlay && (
+							{myTurn && !canHumanPlay && !peekTable && !game.roundComplete && !dealing && (
 								<button
 									type='button'
 									onClick={onPass}
@@ -767,24 +1005,30 @@ export default function GameTable({
 									ref={handRowRef}
 									className='flex items-end gap-1'
 								>
-									{myPlayer.hand.map((tile, index) => {
+									{myPlayer.hand.slice(0, dealtCount).map((tile, index) => {
 										const playable =
-											myTurn &&
-											isPlayable(tile, game.board, openingDoubleSix);
+											!dealing &&
+											(!myTurn ||
+												isPlayable(tile, game.board, openingDoubleSix));
 										const lifting = lift?.index === index;
+										const arriving = !dealReady;
 
 										return (
 											<div
 												key={tile.id}
 												className={`hand-tile-slot cursor-grab active:cursor-grabbing ${
 													lifting ? 'is-lifting' : ''
-												}`}
+												} ${arriving ? 'tile-deal' : ''}`}
 												style={
 													lifting && lift
 														? {
 																transform: `translate(${lift.dx}px, ${lift.dy - 16}px) scale(1.08) rotate(-4deg)`,
 															}
-														: undefined
+														: arriving
+															? {
+																	['--deal-rot']: `${index % 2 === 0 ? -14 : 12}deg`,
+																}
+															: undefined
 												}
 												onPointerDown={(event) =>
 													onHandPointerDown(event, index)
@@ -924,14 +1168,29 @@ function FitBoard({
 			return;
 		}
 
-		const availW = Math.max(outer.clientWidth - 8, 1);
-		const availH = Math.max(outer.clientHeight - 8, 1);
-		const scale = Math.min(1, availW / width, availH / height);
-		const nextScale = Number.isFinite(scale) ? scale : 1;
-		const left = (outer.clientWidth - width * nextScale) / 2;
-		const top = outer.clientHeight / 2 - (anchorY + 10) * nextScale;
+		const update = () => {
+			const availW = Math.max(outer.clientWidth - 8, 1);
+			const availH = Math.max(outer.clientHeight - 8, 1);
+			const scale = Math.min(1, availW / width, availH / height);
+			const nextScale = Number.isFinite(scale) ? scale : 1;
+			const left = Math.round((outer.clientWidth - width * nextScale) / 2);
+			const top = Math.round(
+				outer.clientHeight / 2 - (anchorY + 10) * nextScale,
+			);
 
-		setView({ scale: nextScale, left, top });
+			setView({ scale: nextScale, left, top });
+		};
+
+		update();
+
+		const observer = new ResizeObserver(update);
+		observer.observe(outer);
+		window.addEventListener('orientationchange', update);
+
+		return () => {
+			observer.disconnect();
+			window.removeEventListener('orientationchange', update);
+		};
 	}, [width, height, anchorY]);
 
 	return (
@@ -943,7 +1202,8 @@ function FitBoard({
 					height,
 					left: view.left,
 					top: view.top,
-					transform: `scale(${view.scale})`,
+					transform:
+						view.scale === 1 ? undefined : `scale(${view.scale})`,
 					transformOrigin: 'top left',
 				}}
 			>
@@ -953,28 +1213,146 @@ function FitBoard({
 	);
 }
 
+function seatSpot(relative: number) {
+	if (relative === 0) {
+		return 'bottom-16 left-1/2 -translate-x-1/2';
+	}
+
+	if (relative === 1) {
+		return 'right-4 top-1/2 -translate-y-1/2';
+	}
+
+	if (relative === 2) {
+		return 'top-10 left-1/2 -translate-x-1/2';
+	}
+
+	return 'left-4 top-1/2 -translate-y-1/2';
+}
+
+function TurnArrow({
+	relative,
+	className,
+}: {
+	relative: number;
+	className?: string;
+}) {
+	const rotation =
+		relative === 0
+			? 'rotate-180'
+			: relative === 1
+				? 'rotate-90'
+				: relative === 3
+					? '-rotate-90'
+					: '';
+
+	return (
+		<svg
+			viewBox='0 0 24 24'
+			className={`${className ?? 'h-8 w-8'} ${rotation}`}
+			fill='currentColor'
+			aria-hidden
+		>
+			<path d='M12 4l8 12H4z' />
+		</svg>
+	);
+}
+
+function PassCallout({
+	seat,
+	nextSeat,
+	mySeat,
+}: {
+	seat: number;
+	nextSeat: number;
+	mySeat: number;
+}) {
+	const passRel = (((seat - mySeat) % 4) + 4) % 4;
+	const nextRel = (((nextSeat - mySeat) % 4) + 4) % 4;
+	const nudge =
+		passRel === 0
+			? { ['--nudge-x']: '5px', ['--nudge-y']: '0px' }
+			: passRel === 1
+				? { ['--nudge-x']: '0px', ['--nudge-y']: '-5px' }
+				: passRel === 2
+					? { ['--nudge-x']: '-5px', ['--nudge-y']: '0px' }
+					: { ['--nudge-x']: '0px', ['--nudge-y']: '5px' };
+
+	return (
+		<>
+			<div
+				className={`paso-tag pointer-events-none absolute z-20 ${seatSpot(passRel)}`}
+			>
+				Paso
+				<span className='paso-tag-arrow' style={nudge}>
+					<TurnArrow relative={(passRel + 1) % 4} className='h-3.5 w-3.5' />
+				</span>
+			</div>
+			<div
+				className={`turn-arrow pointer-events-none absolute z-20 ${seatSpot(nextRel)}`}
+			>
+				<TurnArrow relative={nextRel} />
+			</div>
+		</>
+	);
+}
+
+function DealPile({ remaining }: { remaining: number }) {
+	const shown = Math.min(5, Math.max(0, remaining));
+
+	if (shown === 0) {
+		return null;
+	}
+
+	return (
+		<div className='deal-pile relative h-14 w-10'>
+			{Array.from({ length: shown }, (_, index) => (
+				<div
+					key={index}
+					className='absolute left-1/2 top-1/2'
+					style={{
+						transform: `translate(-50%, -50%) translate(${index}px, ${-index * 1.5}px) rotate(${index * 4 - 8}deg)`,
+					}}
+				>
+					<Domino
+						faceDown
+						size='mini'
+						orientation='hand'
+						disabled
+						playable
+					/>
+				</div>
+			))}
+		</div>
+	);
+}
+
 function SideTiles({
 	tiles,
 	axis,
+	visible,
 }: {
 	tiles: Tile[];
 	axis: 'horizontal' | 'vertical';
+	visible?: number;
 }) {
+	const shown = visible == null ? tiles : tiles.slice(0, visible);
+
 	return (
 		<div
 			className={`flex items-center justify-center ${
 				axis === 'vertical' ? 'flex-col' : 'flex-row'
 			}`}
 		>
-			{tiles.map((tile) => (
-				<Domino
-					key={tile.id}
-					faceDown
-					size='mini'
-					orientation={axis === 'vertical' ? 'hand' : 'board'}
-					disabled
-					playable
-				/>
+			{shown.map((tile) => (
+				<div key={tile.id} className='tile-deal-mini'>
+					<Domino
+						faceDown
+						size='mini'
+						orientation={axis === 'vertical' ? 'hand' : 'board'}
+						disabled
+						playable
+					/>
+				</div>
 			))}
 		</div>
 	);

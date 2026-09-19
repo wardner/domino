@@ -77,6 +77,25 @@ body {
   font-weight: 600;
 }
 
+.side-pick {
+  display: grid;
+  place-items: center;
+  width: 2.15rem;
+  height: 2.15rem;
+  border-radius: 999px;
+  border: 1px solid rgba(42, 28, 16, 0.18);
+  background: #f4e6c3;
+  color: #2a1c10;
+  font-size: 1.05rem;
+  font-weight: 800;
+  line-height: 1;
+  transition: transform 0.15s ease;
+}
+
+.side-pick:hover {
+  transform: translateY(-1px) scale(1.06);
+}
+
 .ghost-btn:hover,
 .action-btn:hover,
 .drop-zone:hover {
@@ -87,6 +106,8 @@ body {
   background: #f4ead3;
   border: 1px solid #c9b896 !important;
   box-shadow: none;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
 .tile-playable {
@@ -145,6 +166,62 @@ body {
   box-shadow: 0 10px 18px rgba(0, 0, 0, 0.38);
 }
 
+@keyframes tile-deal {
+  0% {
+    opacity: 0;
+    transform: translateY(-118px) rotate(var(--deal-rot, -12deg)) scale(0.72);
+  }
+
+  68% {
+    opacity: 1;
+    transform: translateY(5px) rotate(2deg) scale(1.06);
+  }
+
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.tile-deal {
+  animation: tile-deal 0.52s cubic-bezier(0.2, 0.86, 0.24, 1) both;
+  z-index: 5;
+}
+
+@keyframes tile-deal-mini {
+  0% {
+    opacity: 0;
+    transform: scale(0.45);
+  }
+
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.tile-deal-mini {
+  animation: tile-deal-mini 0.36s ease-out both;
+}
+
+.deal-pile {
+  animation: deal-pile-flick 0.18s ease-out;
+}
+
+@keyframes deal-pile-flick {
+  0% {
+    transform: translateY(0) rotate(0deg);
+  }
+
+  40% {
+    transform: translateY(-4px) rotate(-6deg);
+  }
+
+  100% {
+    transform: none;
+  }
+}
+
 @keyframes mesa-tremble {
   0%,
   100% {
@@ -174,8 +251,121 @@ body {
 
 .mesa-tremble {
   animation:
-    mesa-tremble 0.3s ease-in-out 0.2s,
-    mesa-tremble 0.3s ease-in-out 0.56s;
+    mesa-tremble 0.38s ease-in-out 0.36s,
+    mesa-tremble 0.38s ease-in-out 1.12s;
+}
+
+@keyframes mesa-tap {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+
+  22% {
+    transform: translate3d(0, 6px, 0);
+  }
+
+  44% {
+    transform: translate3d(0, 0, 0);
+  }
+
+  62% {
+    transform: translate3d(0, 3px, 0);
+  }
+}
+
+.mesa-tap {
+  animation: mesa-tap 0.4s ease-out;
+}
+
+@keyframes paso-pop {
+  0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.7);
+  }
+
+  22% {
+    opacity: 1;
+    transform: translateY(0) scale(1.08);
+  }
+
+  78% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.96);
+  }
+}
+
+.paso-tag {
+  animation: paso-pop 1.35s ease-out forwards;
+  display: flex;
+  align-items: center;
+  gap: 0.28rem;
+  border-radius: 999px;
+  background: rgba(8, 20, 16, 0.72);
+  padding: 0.22rem 0.7rem;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #fde68a;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
+}
+
+@keyframes paso-arrow-nudge {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+
+  50% {
+    transform: translate(var(--nudge-x, 4px), var(--nudge-y, 0));
+  }
+}
+
+.paso-tag-arrow {
+  animation: paso-arrow-nudge 0.42s ease-in-out infinite;
+}
+
+@keyframes turn-arrow-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.92);
+  }
+
+  40% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+}
+
+.turn-arrow {
+  animation: turn-arrow-pulse 0.7s ease-in-out 2;
+  color: #facc15;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.45));
+}
+
+.score-total {
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+@media (orientation: landscape) {
+  .game-shell {
+    max-width: none;
+    padding: 0.2rem 0.55rem 0.25rem;
+  }
+
+  .table-rail {
+    border-width: 5px;
+    margin-top: 0.25rem;
+  }
 }
 
 @keyframes tile-arrive {
@@ -232,23 +422,31 @@ body {
     opacity: 0.15;
   }
 
-  24% {
+  18% {
     transform: translate(var(--capi-x, -18px), var(--capi-y, 0)) rotate(-8deg)
       scale(1.14);
     opacity: 1;
   }
 
-  32% {
+  26% {
     transform: translate(var(--capi-x, -18px), var(--capi-y, 0)) scale(0.95);
   }
 
-  58% {
+  38% {
+    transform: translate(var(--capi-x, -18px), var(--capi-y, 0)) scale(1);
+  }
+
+  56% {
     transform: translate(var(--cua-x, 18px), var(--cua-y, 0)) rotate(8deg)
       scale(1.14);
   }
 
-  66% {
+  64% {
     transform: translate(var(--cua-x, 18px), var(--cua-y, 0)) scale(0.95);
+  }
+
+  78% {
+    transform: translate(var(--cua-x, 18px), var(--cua-y, 0)) scale(1);
   }
 
   100% {
@@ -259,7 +457,7 @@ body {
 
 .tile-capicua,
 .tile-arrive.tile-capicua {
-  animation: tile-capicua 0.92s cubic-bezier(0.2, 0.8, 0.22, 1);
+  animation: tile-capicua 2s cubic-bezier(0.2, 0.8, 0.22, 1);
 }
 
 @keyframes result-fade {

@@ -923,18 +923,28 @@ export function playTile(
 	/*
 	 * CAPICÚA:
 	 *
-	 * Solo si la ficha ganadora conecta
-	 * por ambos lados.
+	 * La ficha ganadora (nunca un doble)
+	 * tiene que poder ir en las DOS puntas,
+	 * y esas puntas tienen que ser distintas.
 	 *
-	 * IMPORTANTE:
-	 * un doble NUNCA es capicúa.
+	 * Si ambos lados son 6, un 6-0 no es
+	 * capicúa: solo encaja el 6.
 	 */
 	const isWinningMove = newHand.length === 0;
 
 	const isDouble = tile.a === tile.b;
 
+	const leftEnd = state.board.length > 0 ? getLeftEnd(state.board) : null;
+	const rightEnd = state.board.length > 0 ? getRightEnd(state.board) : null;
+
 	const isCapicua =
-		isWinningMove && !isDouble && state.board.length > 0 && canLeft && canRight;
+		isWinningMove &&
+		!isDouble &&
+		leftEnd !== null &&
+		rightEnd !== null &&
+		leftEnd !== rightEnd &&
+		canLeft &&
+		canRight;
 
 	if (isCapicua) {
 		nextState = addBonus(nextState, state.currentPlayer, 'capicua');

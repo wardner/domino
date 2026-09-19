@@ -1,3 +1,4 @@
+import { BOARD_TILE_LONG, BOARD_TILE_SHORT } from '@/lib/boardLayout';
 import { Tile } from '@/lib/dominoes';
 
 const PIPS: Record<number, Array<[number, number]>> = {
@@ -36,8 +37,8 @@ const PIPS: Record<number, Array<[number, number]>> = {
 };
 
 export const TILE_SIZE = {
-	board: { regular: 42, double: 21 },
-	hand: { regular: 28, double: 56 },
+	board: { regular: BOARD_TILE_LONG, double: BOARD_TILE_SHORT },
+	hand: { regular: 34, double: 68 },
 	mini: { regular: 12, double: 24 },
 };
 
@@ -69,12 +70,14 @@ type DominoProps = {
 function Face({
 	value,
 	size,
+	horizontal = false,
 }: {
 	value: number;
 	size: 'hand' | 'board' | 'mini';
+	horizontal?: boolean;
 }) {
-	const box = size === 'mini' ? 10 : size === 'board' ? 17 : 24;
-	const pip = size === 'mini' ? 2 : size === 'board' ? 3 : 4;
+	const box = size === 'mini' ? 10 : size === 'board' ? 23 : 30;
+	const pip = size === 'mini' ? 2 : size === 'board' ? 4 : 5;
 
 	return (
 		<div
@@ -82,18 +85,23 @@ function Face({
 			style={{ width: box, height: box }}
 			aria-hidden
 		>
-			{PIPS[value].map(([col, row]) => (
-				<span
-					key={`${col}-${row}`}
-					className='rounded-full bg-[#1a120c]'
-					style={{
-						gridColumn: col,
-						gridRow: row,
-						width: pip,
-						height: pip,
-					}}
-				/>
-			))}
+			{PIPS[value].map(([col, row]) => {
+				const pipCol = horizontal ? 4 - row : col;
+				const pipRow = horizontal ? col : row;
+
+				return (
+					<span
+						key={`${pipCol}-${pipRow}`}
+						className='rounded-full bg-[#1a120c]'
+						style={{
+							gridColumn: pipCol,
+							gridRow: pipRow,
+							width: pip,
+							height: pip,
+						}}
+					/>
+				);
+			})}
 		</div>
 	);
 }
@@ -174,9 +182,9 @@ export default function Domino({
 		<div className='tile-back-pattern h-full w-full' />
 	) : (
 		<>
-			<Face value={first} size={visualSize} />
+			<Face value={first} size={visualSize} horizontal={!vertical} />
 			<div className={vertical ? 'tile-divider-h' : 'tile-divider-v'} />
-			<Face value={second} size={visualSize} />
+			<Face value={second} size={visualSize} horizontal={!vertical} />
 		</>
 	);
 
