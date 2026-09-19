@@ -5,8 +5,11 @@ import {
 	useLayoutEffect,
 	useRef,
 	useState,
+	type CSSProperties,
 	type PointerEvent,
 } from 'react';
+
+type StyleVars = CSSProperties & Record<`--${string}`, string>;
 
 import Domino from '@/components/Domino';
 import { BOT_THINK_MS, chooseBotMove } from '@/lib/botPlay';
@@ -884,7 +887,7 @@ export default function GameTable({
 										anchorY={boardPath.anchorY}
 									>
 										{boardPath.tiles.map((placed) => {
-											const capicuaStyle =
+											const capicuaStyle: StyleVars | null =
 												capicuaHold && arrivingId === placed.tile.id
 													? {
 															['--capi-x']: `${(leftPlacedEnd?.x ?? placed.x) - placed.x}px`,
@@ -1025,9 +1028,9 @@ export default function GameTable({
 																transform: `translate(${lift.dx}px, ${lift.dy - 16}px) scale(1.08) rotate(-4deg)`,
 															}
 														: arriving
-															? {
+															? ({
 																	['--deal-rot']: `${index % 2 === 0 ? -14 : 12}deg`,
-																}
+																} as StyleVars)
 															: undefined
 												}
 												onPointerDown={(event) =>
@@ -1268,7 +1271,7 @@ function PassCallout({
 }) {
 	const passRel = (((seat - mySeat) % 4) + 4) % 4;
 	const nextRel = (((nextSeat - mySeat) % 4) + 4) % 4;
-	const nudge =
+	const nudge: StyleVars =
 		passRel === 0
 			? { ['--nudge-x']: '5px', ['--nudge-y']: '0px' }
 			: passRel === 1
